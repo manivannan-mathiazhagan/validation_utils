@@ -105,20 +105,24 @@ Latest update Date: 2026-10-25
 
     /* Validation case heading */
     ods text="^S={font_size=5pt} ";
-    ods text="^S={font_weight=bold font_size=13pt color=cx174EA6}&id - &description";
+    ods text="^S={font_weight=bold font_size=13pt color=cx174EA6 just=center}&id - &description";
 
     /* 1. Input Dataset */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Input Dataset: &input";
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Input Dataset: &input";
 
     %if %length(%superq(input)) and %sysfunc(exist(&input)) %then %do;
-        proc print data=&input noobs label; run;
+        proc print data=&input noobs label
+            style(table)=[width=100%]
+            style(header)=[just=center font_size=10pt cellpadding=6pt]
+            style(data)=[font_size=10pt cellpadding=6pt];
+        run;
     %end;
     %else %do;
         ods text="Input dataset not available.";
     %end;
 
     /* 2. Macro Call */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Macro Call";
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Macro Call";
 
     data work._validate_call;
         length macro_call $32767;
@@ -133,7 +137,7 @@ Latest update Date: 2026-10-25
     run;
 
     /* 3. Execution Log */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Execution Log (NOTE / WARNING / ERROR)";
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Execution Log (NOTE / WARNING / ERROR)";
 
     %if &_nlog > 0 %then %do;
         proc report data=work._validate_log nowd noheader
@@ -144,18 +148,22 @@ Latest update Date: 2026-10-25
         run;
     %end;
     %else %do;
-        ods text="^S={color=cxB42318}No NOTE, WARNING or ERROR messages were captured.";
+        ods text="^S={color=cxB42318 just=center}No NOTE, WARNING or ERROR messages were captured.";
     %end;
 
     %if &_probe=0 %then %do;
-        ods text="^S={font_weight=bold color=cxB42318}CAPTURE WARNING: Probe missing from log. Verify PROC PRINTTO.";
+        ods text="^S={font_weight=bold color=cxB42318 just=center}CAPTURE WARNING: Probe missing from log. Verify PROC PRINTTO.";
     %end;
 
     /* 4. Output Dataset */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Output Dataset: &output";
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Output Dataset: &output";
 
     %if %length(%superq(output)) and %sysfunc(exist(&output)) %then %do;
-        proc print data=&output noobs label; run;
+        proc print data=&output noobs label
+            style(table)=[width=100%]
+            style(header)=[just=center font_size=10pt cellpadding=6pt]
+            style(data)=[font_size=10pt cellpadding=6pt];
+        run;
     %end;
     %else %do;
         ods text="Output dataset not created.";
