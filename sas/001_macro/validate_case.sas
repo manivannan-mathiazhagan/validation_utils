@@ -1,50 +1,26 @@
-
 /*** HELP START ***//*
 ### Macro:
     %validate_case
 
 ### Purpose:
-    Execute and document an individual SAS macro validation case.
-    Capture execution messages and generate structured HTML output
-    containing the input dataset, macro call, execution log,
-    and output dataset.
+    Execute one validation case and document its input, formatted macro call,
+    execution messages, and output. Highlight variables newly added to output.
 
 ### Parameters:
-- id (required): Unique validation case identifier, e.g. T01 or N01.
-- description (required): Description of the validation scenario.
-- input: Input SAS dataset to display in the report.
-- output: Expected output SAS dataset to display in the report.
-- call (required): SAS macro invocation to execute.
+- id: Validation case ID.
+- description: Scenario description.
+- input: Input dataset.
+- output: Output dataset.
+- call: Macro invocation protected with %nrstr().
 
 ### Notes:
-- The supplied macro invocation is executed once per validation case.
-- Use %nrstr() to prevent premature execution of the supplied macro.
-- Captures NOTE, WARNING, and ERROR messages from the SAS log.
-- Displays the actual input and output datasets.
-- Reports when the expected output dataset is not created.
-- Supports both positive and negative validation scenarios.
-- Requires an HTML report initialized by %validate_init.
-- Does not require separate start or end calls for individual cases.
-- Temporary log files are managed using a SAS TEMP fileref.
-- The validation report uses the HTML destination initialized by %validate_init.
-
-### Sample code:
-~~~sas
-%validate_case(
-    id=T01,
-    description=Complete datetime retained,
-    input=work.in_T01,
-    output=work.out_T01,
-    call=%nrstr(
-        %derive_vars_dtm(
-            dataset=work.in_T01,
-            outdata=work.out_T01,
-            new_vars_prefix=AST,
-            dtc=DTC
-        )
-    )
-);
-~~~
+- Executes the target macro exactly once.
+- New variables are detected by comparing input and output variable names.
+- Existing variables remain uncolored; new output columns are green.
+- Input/output tables are separate; row-level matching is not assumed.
+- Formats the call with one parameter per line when commas separate
+  top-level arguments (commas inside quotes or nested parentheses are kept).
+- Requires %validate_init to have opened the HTML ODS destination.
 
 ### URL:
 https://github.com/manivannan-mathiazhagan/validation_utils
@@ -56,34 +32,32 @@ Latest update Date: 2026-10-25
 *//*** HELP END ***/
 
 %macro validate_case(id=,description=,input=,output=,call=);
+    %local _oldsource _oldsource2 _oldmprint _oldmlogic _oldsymbolgen
+           _nlog _probe _vld_call _in_exists _out_exists
+           _newvars _outvars _nnew;
 
-    %local _oldsource _oldsource2 _oldmprint _oldmlogic _oldsymbolgen _nlog _probe _vld_call;
-
-    /* Preserve the supplied macro invocation for reporting */
     %let _vld_call=%superq(call);
-
-    /* Save current SAS logging options */
     %let _oldsource=%sysfunc(getoption(source));
     %let _oldsource2=%sysfunc(getoption(source2));
     %let _oldmprint=%sysfunc(getoption(mprint));
     %let _oldmlogic=%sysfunc(getoption(mlogic));
     %let _oldsymbolgen=%sysfunc(getoption(symbolgen));
 
-    /* Capture the target macro execution log */
+    %let _in_exists=0;
+    %let _out_exists=0;
+    %if %length(%superq(input)) %then %let _in_exists=%sysfunc(exist(&input));
+
+    /* Capture the target macro log and execute the call exactly once. */
     filename _vldlog temp;
     options notes nosource nosource2 nomprint nomlogic nosymbolgen;
     proc printto log=_vldlog new; run;
-
     %put NOTE: VALIDATE_CAPTURE_PROBE &id;
-
-    /* Execute the supplied macro invocation exactly once */
     %unquote(%superq(call));
-
-    /* Restore SAS logging */
     proc printto; run;
     options &_oldsource &_oldsource2 &_oldmprint &_oldmlogic &_oldsymbolgen;
 
-    /* Extract NOTE, WARNING and ERROR messages */
+    %if %length(%superq(output)) %then %let _out_exists=%sysfunc(exist(&output));
+
     data work._validate_log;
         length message $2000 raw $32767;
         infile _vldlog truncover lrecl=32767;
@@ -96,21 +70,18 @@ Latest update Date: 2026-10-25
         keep message;
     run;
 
-    /* Count captured messages and verify log redirection */
     proc sql noprint;
         select count(*), coalesce(sum(index(message,'VALIDATE_CAPTURE_PROBE')>0),0)
-        into :_nlog trimmed, :_probe trimmed
+          into :_nlog trimmed, :_probe trimmed
         from work._validate_log;
     quit;
 
-    /* Validation case heading */
     ods text="^S={font_size=5pt} ";
     ods text="^S={font_weight=bold font_size=13pt color=cx174EA6 just=center}&id - &description";
 
-    /* 1. Input Dataset */
+    /* 1. Input */
     ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Input Dataset: &input";
-
-    %if %length(%superq(input)) and %sysfunc(exist(&input)) %then %do;
+    %if &_in_exists %then %do;
         proc print data=&input noobs label
             style(table)=[width=100%]
             style(header)=[just=center font_size=10pt cellpadding=6pt]
@@ -121,55 +92,186 @@ Latest update Date: 2026-10-25
         ods text="Input dataset not available.";
     %end;
 
-    /* 2. Macro Call */
+    /* 2. Pretty-print macro call. Split only at top-level argument commas. */
     ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Macro Call";
-
     data work._validate_call;
-        length macro_call $32767;
-        macro_call=symget('_vld_call');
+        length source $32767 line $32767 token $32767 ch $1
+               quote $1 prefix $256;
+        source=strip(symget('_vld_call'));
+        depth=0; quote=' '; token=''; lineno=0; argdepth=.;
+        do pos=1 to lengthn(source);
+            ch=substr(source,pos,1);
+            if quote ne ' ' then do;
+                token=cats(token,ch);
+                if ch=quote then do;
+                    if pos<lengthn(source) and substr(source,pos+1,1)=quote then do;
+                        pos=pos+1;
+                        token=cats(token,quote);
+                    end;
+                    else quote=' ';
+                end;
+            end;
+            else if ch='"' or ch="'" then do;
+                quote=ch;
+                token=cats(token,ch);
+            end;
+            else if ch='(' then do;
+                depth=depth+1;
+                token=cats(token,ch);
+                if missing(argdepth) then do;
+                    /* First parenthesis begins the macro parameter list. */
+                    argdepth=depth;
+                    line=strip(token);
+                    lineno+1; output;
+                    token='';
+                end;
+            end;
+            else if ch=')' then do;
+                if depth=argdepth then do;
+                    if not missing(strip(token)) then do;
+                        line=cats('    ',strip(token));
+                        lineno+1; output;
+                        token='';
+                    end;
+                    line=repeat(' ',0)||')';
+                    lineno+1; output;
+                end;
+                else token=cats(token,ch);
+                depth=max(0,depth-1);
+            end;
+            else if ch=',' and depth=argdepth then do;
+                line=cats('    ',strip(token),',');
+                lineno+1; output;
+                token='';
+            end;
+            else token=cats(token,ch);
+        end;
+        if not missing(strip(token)) then do;
+            line=strip(token);
+            lineno+1; output;
+        end;
+        keep lineno line;
     run;
 
     proc report data=work._validate_call nowd noheader
         style(report)=[outputwidth=100%]
-        style(column)=[font_face="Courier New" font_size=8pt just=left];
-        columns macro_call;
-        define macro_call / display;
+        style(column)=[font_face="Courier New" font_size=8pt just=left asis=on];
+        columns line;
+        define line / display style(column)=[cellwidth=100%];
     run;
 
-    /* 3. Execution Log */
+    /* 3. Execution log */
     ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Execution Log (NOTE / WARNING / ERROR)";
-
     %if &_nlog > 0 %then %do;
-        proc report data=work._validate_log nowd noheader
-            style(report)=[outputwidth=100%]
-            style(column)=[font_face="Courier New" font_size=8pt just=left];
-            columns message;
-            define message / display style(column)=[cellwidth=100%];
+        /* Render a continuous, borderless SAS-style log rather than
+           one PROC REPORT table row per message. HTML entities are escaped. */
+        data _null_;
+            set work._validate_log end=last;
+            length escaped $8000 html $12000 statement $16000;
+            retain html '' lines 0;
+            escaped=strip(message);
+            escaped=tranwrd(escaped,'&','&amp;');
+            escaped=tranwrd(escaped,'<','&lt;');
+            escaped=tranwrd(escaped,'>','&gt;');
+            escaped=tranwrd(escaped,'"','&quot;');
+            escaped=tranwrd(escaped,"'",'&#39;');
+            if lines=0 then
+                html='<pre style="font-family:Consolas,monospace;font-size:12px;'
+                    ||'line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;'
+                    ||'background:#f7f8fa;padding:12px;border:1px solid #e1e4e8;'
+                    ||'border-radius:4px;margin:4px 0 10px 0">';
+            /* Flush periodically so long logs do not exceed SAS string limits. */
+            if lengthn(html)+lengthn(escaped)+8 > 10000 then do;
+                statement=cats('ods html text=',quote(trim(html)||'</pre>'),';');
+                call execute(statement);
+                html='<pre style="font-family:Consolas,monospace;font-size:12px;'
+                    ||'line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;'
+                    ||'background:#f7f8fa;padding:12px;border:1px solid #e1e4e8;'
+                    ||'border-radius:4px;margin:4px 0 10px 0">';
+                lines=0;
+            end;
+            html=cats(html,escaped,'&#10;');
+            lines+1;
+            if last then do;
+                statement=cats('ods html text=',quote(trim(html)||'</pre>'),';');
+                call execute(statement);
+            end;
         run;
     %end;
     %else %do;
         ods text="^S={color=cxB42318 just=center}No NOTE, WARNING or ERROR messages were captured.";
     %end;
-
     %if &_probe=0 %then %do;
         ods text="^S={font_weight=bold color=cxB42318 just=center}CAPTURE WARNING: Probe missing from log. Verify PROC PRINTTO.";
     %end;
 
-    /* 4. Output Dataset */
+    /* 4. Output metadata comparison: only names absent from input are new. */
     ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Output Dataset: &output";
+    %if &_out_exists %then %do;
+        proc contents data=&output out=work._validate_outmeta(keep=name varnum) noprint;
+        run;
+        %if &_in_exists %then %do;
+            proc contents data=&input out=work._validate_inmeta(keep=name) noprint;
+            run;
+        %end;
+        %else %do;
+            data work._validate_inmeta;
+                length name $32;
+                stop;
+            run;
+        %end;
 
-    %if %length(%superq(output)) and %sysfunc(exist(&output)) %then %do;
-        proc print data=&output noobs label
-            style(table)=[width=100%]
-            style(header)=[just=center font_size=10pt cellpadding=6pt]
-            style(data)=[font_size=10pt cellpadding=6pt];
+        proc sql noprint;
+            create table work._validate_varmeta as
+            select a.name, a.varnum,
+                   case when b.name is null and &_in_exists=1 then 1 else 0 end as is_new
+            from work._validate_outmeta as a
+            left join work._validate_inmeta as b
+              on upcase(a.name)=upcase(b.name)
+            order by a.varnum;
+            select name into :_outvars separated by ' '
+              from work._validate_varmeta order by varnum;
+            select count(*) into :_nnew trimmed
+              from work._validate_varmeta where is_new=1;
+            select name into :_newvars separated by ', '
+              from work._validate_varmeta where is_new=1 order by varnum;
+        quit;
+
+        %if &_in_exists %then %do;
+            %if &_nnew > 0 %then %do;
+                ods text="^S={font_weight=bold color=cx137333}New variables (green): &_newvars";
+            %end;
+            %else %do;
+                ods text="^S={color=cx5F6368}No new variables detected (based on variable names).";
+            %end;
+        %end;
+        %else %do;
+            ods text="^S={color=cx5F6368}New-variable comparison unavailable: input dataset missing.";
+        %end;
+
+        /* Generated DEFINE statements preserve original output variable order. */
+        data _null_;
+            set work._validate_varmeta end=last;
+            length statement $1024;
+            if _n_=1 then do;
+                call execute('proc report data=&output nowd missing');
+                call execute(' style(report)=[outputwidth=100%]');
+                call execute(' style(header)=[just=center font_size=10pt cellpadding=6pt]');
+                call execute(' style(column)=[font_size=10pt cellpadding=6pt];');
+                call execute(' columns &_outvars;');
+            end;
+            if is_new then
+                statement=cats('define ',name,
+                    ' / display style(header)=[background=cxDDF5E3 foreground=cx137333 font_weight=bold]',
+                    ' style(column)=[background=cxEBF8EF foreground=cx137333];');
+            else statement=cats('define ',name,' / display;');
+            call execute(statement);
+            if last then call execute('run;');
         run;
     %end;
     %else %do;
         ods text="Output dataset not created.";
     %end;
 
-    /* Release temporary log */
     filename _vldlog clear;
-
 %mend validate_case;

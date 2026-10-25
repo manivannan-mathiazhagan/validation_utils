@@ -10,12 +10,12 @@
   
 - Package: validation_utils
 - Version: 0.1.0
-- Generated: 2026-10-25T17:51:40
+- Generated: 2026-10-25T18:10:18
 - Author(s): Manivannan Mathialagan
 - Maintainer(s): Manivannan Mathialagan
 - License: MIT
-- File SHA256: `F*68AECC6797EA55C7FA0D76F3C0B4FFF67E8937EE79D70AB41AC61AF91DC74249` for this version
-- Content SHA256: `C*60B47D9FDA05D42F0FD7CDD4FF8A18A6783DC1E23E68BFD50310E16BAE29FD98` for this version
+- File SHA256: `F*3BE23CA28EEC99B8D2EC153487816DE8275ACAB9AFEB199A1B0B20828C26691D` for this version
+- Content SHA256: `C*82C26907E03C2FB175F1449D7A3835405912B338FA25FA59062EA1D635C9CBBE` for this version
   
 ---
  
@@ -55,47 +55,24 @@ The `validation_utils` package consists of the following content:
     %validate_case
 
 ### Purpose:
-    Execute and document an individual SAS macro validation case.
-    Capture execution messages and generate structured HTML output
-    containing the input dataset, macro call, execution log,
-    and output dataset.
+    Execute one validation case and document its input, formatted macro call,
+    execution messages, and output. Highlight variables newly added to output.
 
 ### Parameters:
-- id (required): Unique validation case identifier, e.g. T01 or N01.
-- description (required): Description of the validation scenario.
-- input: Input SAS dataset to display in the report.
-- output: Expected output SAS dataset to display in the report.
-- call (required): SAS macro invocation to execute.
+- id: Validation case ID.
+- description: Scenario description.
+- input: Input dataset.
+- output: Output dataset.
+- call: Macro invocation protected with %nrstr().
 
 ### Notes:
-- The supplied macro invocation is executed once per validation case.
-- Use %nrstr() to prevent premature execution of the supplied macro.
-- Captures NOTE, WARNING, and ERROR messages from the SAS log.
-- Displays the actual input and output datasets.
-- Reports when the expected output dataset is not created.
-- Supports both positive and negative validation scenarios.
-- Requires an HTML report initialized by %validate_init.
-- Does not require separate start or end calls for individual cases.
-- Temporary log files are managed using a SAS TEMP fileref.
-- The validation report uses the HTML destination initialized by %validate_init.
-
-### Sample code:
-~~~sas
-%validate_case(
-    id=T01,
-    description=Complete datetime retained,
-    input=work.in_T01,
-    output=work.out_T01,
-    call=%nrstr(
-        %derive_vars_dtm(
-            dataset=work.in_T01,
-            outdata=work.out_T01,
-            new_vars_prefix=AST,
-            dtc=DTC
-        )
-    )
-);
-~~~
+- Executes the target macro exactly once.
+- New variables are detected by comparing input and output variable names.
+- Existing variables remain uncolored; new output columns are green.
+- Input/output tables are separate; row-level matching is not assumed.
+- Formats the call with one parameter per line when commas separate
+  top-level arguments (commas inside quotes or nested parentheses are kept).
+- Requires %validate_init to have opened the HTML ODS destination.
 
 ### URL:
 https://github.com/manivannan-mathiazhagan/validation_utils
