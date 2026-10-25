@@ -17,7 +17,7 @@
 - Executes the target macro exactly once.
 - New variables are detected by comparing input and output variable names.
 - Existing variables remain uncolored; new output columns are green.
-- Input/output tables are separate; row-level matching is not assumed.
+- Displays output once as a comparison view; new variables are green.
 - Formats the call with one parameter per line when commas separate
   top-level arguments (commas inside quotes or nested parentheses are kept).
 - Requires %validate_init to have opened the HTML ODS destination.
@@ -79,134 +79,134 @@ Latest update Date: 2026-10-25
     ods text="^S={font_size=5pt} ";
     ods text="^S={font_weight=bold font_size=13pt color=cx174EA6 just=center}&id - &description";
 
-    /* 1. Input */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Input Dataset: &input";
-    %if &_in_exists %then %do;
-        proc print data=&input noobs label
-            style(table)=[width=100%]
-            style(header)=[just=center font_size=10pt cellpadding=6pt]
-            style(data)=[font_size=10pt cellpadding=6pt];
-        run;
-    %end;
-    %else %do;
-        ods text="Input dataset not available.";
-    %end;
+    /* 1. Macro call: one HTML PRE block, no table row lines. */
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Macro Call";
 
-    /* 2. Pretty-print macro call. Split only at top-level argument commas. */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Macro Call";
     data work._validate_call;
-        length source $32767 line $32767 token $32767 ch $1
-               quote $1 prefix $256;
+        length source $32767 token $32767 ch $1 quotechar $1
+               line $32767 escaped $32767 html $32767;
         source=strip(symget('_vld_call'));
-        depth=0; quote=' '; token=''; lineno=0; argdepth=.;
+        depth=0; argdepth=.; quotechar=' '; token=''; html='';
         do pos=1 to lengthn(source);
             ch=substr(source,pos,1);
-            if quote ne ' ' then do;
+            if quotechar ne ' ' then do;
                 token=cats(token,ch);
-                if ch=quote then do;
-                    if pos<lengthn(source) and substr(source,pos+1,1)=quote then do;
-                        pos=pos+1;
-                        token=cats(token,quote);
+                if ch=quotechar then do;
+                    if pos<lengthn(source) and substr(source,pos+1,1)=quotechar then do;
+                        pos+1;
+                        token=cats(token,quotechar);
                     end;
-                    else quote=' ';
+                    else quotechar=' ';
                 end;
             end;
-            else if ch='"' or ch="'" then do;
-                quote=ch;
+            else if ch in ('"',"'") then do;
+                quotechar=ch;
                 token=cats(token,ch);
             end;
             else if ch='(' then do;
-                depth=depth+1;
+                depth+1;
                 token=cats(token,ch);
                 if missing(argdepth) then do;
-                    /* First parenthesis begins the macro parameter list. */
                     argdepth=depth;
-                    line=strip(token);
-                    lineno+1; output;
+                    link appendline;
                     token='';
                 end;
             end;
             else if ch=')' then do;
                 if depth=argdepth then do;
                     if not missing(strip(token)) then do;
-                        line=cats('    ',strip(token));
-                        lineno+1; output;
-                        token='';
+                        token=cats('    ',strip(token));
+                        link appendline;
                     end;
-                    line=repeat(' ',0)||')';
-                    lineno+1; output;
+                    token=')';
+                    link appendline;
+                    token='';
                 end;
                 else token=cats(token,ch);
                 depth=max(0,depth-1);
             end;
             else if ch=',' and depth=argdepth then do;
-                line=cats('    ',strip(token),',');
-                lineno+1; output;
+                token=cats('    ',strip(token),',');
+                link appendline;
                 token='';
             end;
             else token=cats(token,ch);
         end;
-        if not missing(strip(token)) then do;
-            line=strip(token);
-            lineno+1; output;
-        end;
-        keep lineno line;
+        if not missing(strip(token)) then link appendline;
+        html=cats('<pre style="margin:0;font-family:Consolas,monospace;',
+                  'white-space:pre-wrap;overflow-wrap:anywhere;">',html,'</pre>');
+        output;
+        keep html;
+        return;
+
+    appendline:
+        line=strip(token);
+        /* Space around parameter = (only the first equals sign). */
+        eq=index(line,'=');
+        if eq>0 then
+            line=cats(substr(line,1,eq-1),' = ',substr(line,eq+1));
+        escaped=trim(line);
+        escaped=tranwrd(escaped,'&','&amp;');
+        escaped=tranwrd(escaped,'<','&lt;');
+        escaped=tranwrd(escaped,'>','&gt;');
+        escaped=tranwrd(escaped,'"','&quot;');
+        html=cats(html,escaped,'&#10;');
+        return;
     run;
 
     proc report data=work._validate_call nowd noheader
-        style(report)=[outputwidth=100%]
-        style(column)=[font_face="Courier New" font_size=8pt just=left asis=on];
-        columns line;
-        define line / display style(column)=[cellwidth=100%];
+        style(report)=[outputwidth=100% frame=void rules=none borderwidth=0]
+        style(column)=[asis=on borderwidth=0 cellpadding=8];
+        columns html;
+        define html / display style(column)=[cellwidth=100%];
     run;
 
-    /* 3. Execution log */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Execution Log (NOTE / WARNING / ERROR)";
-    %if &_nlog > 0 %then %do;
-        /* Render a continuous, borderless SAS-style log rather than
-           one PROC REPORT table row per message. HTML entities are escaped. */
-        data _null_;
-            set work._validate_log end=last;
-            length escaped $8000 html $12000 statement $16000;
-            retain html '' lines 0;
-            escaped=strip(message);
-            escaped=tranwrd(escaped,'&','&amp;');
-            escaped=tranwrd(escaped,'<','&lt;');
-            escaped=tranwrd(escaped,'>','&gt;');
-            escaped=tranwrd(escaped,'"','&quot;');
-            escaped=tranwrd(escaped,"'",'&#39;');
-            if lines=0 then
-                html='<pre style="font-family:Consolas,monospace;font-size:12px;'
-                    ||'line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;'
-                    ||'background:#f7f8fa;padding:12px;border:1px solid #e1e4e8;'
-                    ||'border-radius:4px;margin:4px 0 10px 0">';
-            /* Flush periodically so long logs do not exceed SAS string limits. */
-            if lengthn(html)+lengthn(escaped)+8 > 10000 then do;
-                statement=cats('ods html text=',quote(trim(html)||'</pre>'),';');
-                call execute(statement);
-                html='<pre style="font-family:Consolas,monospace;font-size:12px;'
-                    ||'line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;'
-                    ||'background:#f7f8fa;padding:12px;border:1px solid #e1e4e8;'
-                    ||'border-radius:4px;margin:4px 0 10px 0">';
-                lines=0;
-            end;
+    /* 2. Execution log: one continuous PRE block, not one row per NOTE. */
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91}Execution Log (NOTE / WARNING / ERROR)";
+
+    data work._validate_logdisplay;
+        length html $32767 escaped $8000;
+        retain html '' used 0 omitted 0;
+        set work._validate_log end=last;
+        escaped=strip(message);
+        escaped=tranwrd(escaped,'&','&amp;');
+        escaped=tranwrd(escaped,'<','&lt;');
+        escaped=tranwrd(escaped,'>','&gt;');
+        escaped=tranwrd(escaped,'"','&quot;');
+        if used+lengthn(escaped)+6<30000 then do;
             html=cats(html,escaped,'&#10;');
-            lines+1;
-            if last then do;
-                statement=cats('ods html text=',quote(trim(html)||'</pre>'),';');
-                call execute(statement);
-            end;
+            used=used+lengthn(escaped)+6;
+        end;
+        else omitted+1;
+        if last then do;
+            if omitted then
+                html=cats(html,'[Additional log messages omitted: ',strip(put(omitted,best.)),']');
+            html=cats('<pre style="margin:0;font-family:Consolas,monospace;',
+                      'font-size:12px;line-height:1.5;white-space:pre-wrap;',
+                      'overflow-wrap:anywhere;background:#f7f8fa;padding:10px;">',
+                      html,'</pre>');
+            output;
+        end;
+        keep html;
+    run;
+
+    %if &_nlog > 0 %then %do;
+        proc report data=work._validate_logdisplay nowd noheader
+            style(report)=[outputwidth=100% frame=void rules=none borderwidth=0]
+            style(column)=[asis=on borderwidth=0 cellpadding=0];
+            columns html;
+            define html / display style(column)=[cellwidth=100%];
         run;
     %end;
     %else %do;
-        ods text="^S={color=cxB42318 just=center}No NOTE, WARNING or ERROR messages were captured.";
+        ods text="No NOTE, WARNING or ERROR messages were captured.";
     %end;
     %if &_probe=0 %then %do;
-        ods text="^S={font_weight=bold color=cxB42318 just=center}CAPTURE WARNING: Probe missing from log. Verify PROC PRINTTO.";
+        ods text="^S={color=cxB42318}CAPTURE WARNING: Probe missing from log. Verify PROC PRINTTO.";
     %end;
 
-    /* 4. Output metadata comparison: only names absent from input are new. */
-    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Output Dataset: &output";
+    /* 3. Compare input metadata with output; display output once. */
+    ods text="^S={font_weight=bold font_size=10pt color=cx245C91 just=center}Input vs. Output Comparison: &input -> &output";
     %if &_out_exists %then %do;
         proc contents data=&output out=work._validate_outmeta(keep=name varnum) noprint;
         run;
@@ -249,7 +249,7 @@ Latest update Date: 2026-10-25
             ods text="^S={color=cx5F6368}New-variable comparison unavailable: input dataset missing.";
         %end;
 
-        /* Generated DEFINE statements preserve original output variable order. */
+        /* Output contains retained input values plus highlighted new columns. */
         data _null_;
             set work._validate_varmeta end=last;
             length statement $1024;

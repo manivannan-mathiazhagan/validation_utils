@@ -9,17 +9,17 @@
 ### Version information:
   
 - Package: validation_utils
-- Version: 0.1.0
-- Generated: 2026-10-25T18:10:18
+- Version: 0.2.0
+- Generated: 2026-10-25T19:03:19
 - Author(s): Manivannan Mathialagan
 - Maintainer(s): Manivannan Mathialagan
 - License: MIT
-- File SHA256: `F*3BE23CA28EEC99B8D2EC153487816DE8275ACAB9AFEB199A1B0B20828C26691D` for this version
-- Content SHA256: `C*82C26907E03C2FB175F1449D7A3835405912B338FA25FA59062EA1D635C9CBBE` for this version
+- File SHA256: `F*44C89F728D237E815594C302A1CA41717B83407CDC8E261ABA722552F6DD029B` for this version
+- Content SHA256: `C*E104D6C0A9F181A7BB92CCAE0712BDE475F351D21C2C34AED6327656C475A2D8` for this version
   
 ---
  
-# The `validation_utils` package, version: `0.1.0`;
+# The `validation_utils` package, version: `0.2.0`;
   
 ---
  
@@ -69,7 +69,7 @@ The `validation_utils` package consists of the following content:
 - Executes the target macro exactly once.
 - New variables are detected by comparing input and output variable names.
 - Existing variables remain uncolored; new output columns are green.
-- Input/output tables are separate; row-level matching is not assumed.
+- Displays output once as a comparison view; new variables are green.
 - Formats the call with one parameter per line when commas separate
   top-level arguments (commas inside quotes or nested parentheses are kept).
 - Requires %validate_init to have opened the HTML ODS destination.

@@ -2,7 +2,7 @@
 Type: Package
 Package: validation_utils
 Title: Validation_Utils - Reusable SAS Macro Validation and Reporting Framework
-Version: 0.1.0
+Version: 0.2.0
 Author: Manivannan Mathialagan
 Maintainer: Manivannan Mathialagan
 License: MIT
