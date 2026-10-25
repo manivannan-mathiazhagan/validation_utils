@@ -1,0 +1,32 @@
+name: Publish SPF Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Verify package files
+        run: |
+          test -s validation_utils.zip
+          test -s validation_utils.md
+
+      - name: Attach package files to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            validation_utils.zip \
+            validation_utils.md \
+            --clobber
