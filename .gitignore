@@ -1,0 +1,24 @@
+# SAS temporary and generated outputs
+*.log
+*.lst
+*.html
+*.htm
+*.pdf
+*.rtf
+
+# SAS Package Builder logs
+build_logs/
+
+# Temporary SAS files
+*.sas7bdat
+*.sas7bcat
+*.lck
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
